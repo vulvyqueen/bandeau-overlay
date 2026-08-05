@@ -57,6 +57,13 @@
     margin-right: 10px;
   }
 
+  #ticker-text .emote {
+    height: 1.5em;
+    width: auto;
+    vertical-align: middle;
+    margin: 0 2px;
+  }
+
   /* --- Mode TTS (style sous-titre) --- */
   #tts-caption {
     display: none;
@@ -116,6 +123,20 @@
   const chatQueue = [];
   const ttsQueue = [];
   let running = false;
+  let emoteMap = {};
+
+  // Recupere la liste des emotes (Twitch/BTTV/7TV/FFZ) servie par le serveur.
+  // Rafraichie a l'ouverture de l'overlay, puis toutes les 30 min (au cas ou
+  // l'overlay reste ouvert tout un long live pendant que la liste cote
+  // serveur se met a jour).
+  function loadEmotes() {
+    fetch('/emotes')
+      .then((r) => (r.ok ? r.json() : {}))
+      .then((map) => { emoteMap = map || {}; })
+      .catch(() => {});
+  }
+  loadEmotes();
+  setInterval(loadEmotes, 30 * 60 * 1000);
 
   function wsUrl() {
     const host = WS_HOST_OVERRIDE || location.host;
@@ -163,10 +184,16 @@
       return;
     }
     if (chatQueue.length) {
-      const item = chatQueue[0];
+      // File "round-robin" : chaque message repasse en fin de file apres son
+      // affichage tant qu'il lui reste des passages. Ca entrelace les
+      // messages (A, B, A, B, ...) au lieu de rejouer deux fois de suite le
+      // meme message avant de passer au suivant.
+      const item = chatQueue.shift();
       await playChat(item);
       item.remaining -= 1;
-      if (item.remaining <= 0) chatQueue.shift();
+      if (item.remaining > 0) {
+        chatQueue.push(item);
+      }
       step();
       return;
     }
@@ -184,23 +211,57 @@
 
       tickerText.innerHTML =
         (item.author ? `<span class="author">${escapeHtml(item.author)} :</span>` : '') +
-        escapeHtml(item.text);
+        renderTextWithEmotes(item.text);
 
-      const barWidth = bar.getBoundingClientRect().width;
-      const textWidth = tickerText.getBoundingClientRect().width;
-      const distance = barWidth + textWidth;
-      const durationMs = Math.max(1500, (distance / SCROLL_SPEED_PX_PER_SEC) * 1000);
+      // Les emotes chargent de facon asynchrone : on attend qu'elles soient
+      // pretes avant de mesurer la largeur du texte, sinon l'animation de
+      // defilement est calculee sur une largeur fausse (trop courte).
+      waitForImages(tickerText).then(() => {
+        const barWidth = bar.getBoundingClientRect().width;
+        const textWidth = tickerText.getBoundingClientRect().width;
+        const distance = barWidth + textWidth;
+        const durationMs = Math.max(1500, (distance / SCROLL_SPEED_PX_PER_SEC) * 1000);
 
-      const anim = tickerText.animate(
-        [
-          { transform: `translateX(${barWidth}px)` },
-          { transform: `translateX(-${textWidth}px)` },
-        ],
-        { duration: durationMs, easing: 'linear', fill: 'forwards' }
-      );
-      anim.onfinish = resolve;
-      anim.oncancel = resolve;
+        const anim = tickerText.animate(
+          [
+            { transform: `translateX(${barWidth}px)` },
+            { transform: `translateX(-${textWidth}px)` },
+          ],
+          { duration: durationMs, easing: 'linear', fill: 'forwards' }
+        );
+        anim.onfinish = resolve;
+        anim.oncancel = resolve;
+      });
     });
+  }
+
+  function waitForImages(container) {
+    const imgs = Array.from(container.querySelectorAll('img'));
+    if (!imgs.length) return Promise.resolve();
+    return Promise.all(
+      imgs.map((img) => (img.complete ? Promise.resolve() : new Promise((res) => {
+        img.onload = res;
+        img.onerror = res;
+      })))
+    );
+  }
+
+  // Remplace les codes d'emotes reconnus (Twitch/BTTV/7TV/FFZ, cf. /emotes)
+  // par des images, tout en echappant le reste du texte normalement. On
+  // decoupe sur les espaces pour comparer chaque "mot" au nom exact d'une
+  // emote (comportement standard du chat Twitch).
+  function renderTextWithEmotes(text) {
+    return text
+      .split(/(\s+)/)
+      .map((token) => {
+        if (/^\s+$/.test(token) || !token) return escapeHtml(token);
+        const url = emoteMap[token];
+        if (url) {
+          return `<img class="emote" src="${escapeHtml(url)}" alt="${escapeHtml(token)}" title="${escapeHtml(token)}">`;
+        }
+        return escapeHtml(token);
+      })
+      .join('');
   }
 
   function playTts(item) {
