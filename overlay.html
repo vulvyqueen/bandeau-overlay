@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>Bandeau overlay</title>
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: transparent;
+    overflow: hidden;
+    width: 100vw;
+    height: 100vh;
+    font-family: 'Segoe UI', Arial, sans-serif;
+  }
+
+  #ticker-bar {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 56px;
+    background: rgba(20, 14, 30, 0.82);
+    border-top: 3px solid #9146FF;
+    display: flex;
+    align-items: center;
+    overflow: hidden;
+    box-sizing: border-box;
+    transition: height 0.25s ease, background 0.25s ease, border-color 0.25s ease;
+  }
+
+  #ticker-bar.tts-mode {
+    height: 96px;
+    background: rgba(20, 14, 30, 0.92);
+    border-top-color: #ff5fa2;
+  }
+
+  /* --- Mode ticker (defilement) --- */
+  #ticker-scroll {
+    white-space: nowrap;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+  }
+
+  #ticker-text {
+    display: inline-block;
+    color: #fff;
+    font-size: 26px;
+    font-weight: 600;
+    text-shadow: 0 1px 3px rgba(0,0,0,0.6);
+  }
+
+  #ticker-text .author {
+    color: #c9a4ff;
+    margin-right: 10px;
+  }
+
+  /* --- Mode TTS (style sous-titre) --- */
+  #tts-caption {
+    display: none;
+    width: 100%;
+    height: 100%;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 0 32px;
+    box-sizing: border-box;
+    color: #fff;
+    font-size: 32px;
+    font-weight: 700;
+    text-shadow: 0 1px 4px rgba(0,0,0,0.7);
+  }
+
+  #tts-caption .tts-icon {
+    margin-right: 14px;
+    font-size: 36px;
+    flex-shrink: 0;
+  }
+
+  #ticker-bar.tts-mode #ticker-scroll { display: none; }
+  #ticker-bar.tts-mode #tts-caption { display: flex; }
+</style>
+</head>
+<body>
+  <div id="ticker-bar">
+    <div id="ticker-scroll">
+      <span id="ticker-text"></span>
+    </div>
+    <div id="tts-caption">
+      <span class="tts-icon">🔊</span>
+      <span id="tts-text"></span>
+    </div>
+  </div>
+
+<script>
+(() => {
+  // ====== CONFIG ======
+  // Laisse vide pour auto-detecter (utilise l'hote de la page).
+  const WS_HOST_OVERRIDE = '';
+  const SCROLL_SPEED_PX_PER_SEC = 160;   // vitesse de defilement du bandeau
+  const PLAYS_BEFORE_DROP = 2;           // nb de passages avant disparition
+  const TTS_MS_PER_CHAR = 70;            // duree d'affichage TTS ~ proportionnelle au texte
+  const TTS_MIN_MS = 3000;
+  const TTS_MAX_MS = 12000;
+  const RECONNECT_DELAY_MS = 2000;
+  // =====================
+
+  const bar = document.getElementById('ticker-bar');
+  const tickerScroll = document.getElementById('ticker-scroll');
+  const tickerText = document.getElementById('ticker-text');
+  const ttsCaption = document.getElementById('tts-caption');
+  const ttsText = document.getElementById('tts-text');
+
+  const chatQueue = [];
+  const ttsQueue = [];
+  let running = false;
+
+  function wsUrl() {
+    const host = WS_HOST_OVERRIDE || location.host;
+    const proto = location.protocol === 'https:' ? 'wss://' : 'ws://';
+    return `${proto}${host}/ws`;
+  }
+
+  function connect() {
+    let ws;
+    try {
+      ws = new WebSocket(wsUrl());
+    } catch (e) {
+      setTimeout(connect, RECONNECT_DELAY_MS);
+      return;
+    }
+    ws.onmessage = (evt) => {
+      try {
+        const msg = JSON.parse(evt.data);
+        if (!msg || !msg.text) return;
+        if (msg.type === 'tts') {
+          ttsQueue.push(msg);
+        } else {
+          chatQueue.push({ ...msg, remaining: PLAYS_BEFORE_DROP });
+        }
+        kick();
+      } catch (e) {
+        console.error('message illisible', e);
+      }
+    };
+    ws.onclose = () => setTimeout(connect, RECONNECT_DELAY_MS);
+    ws.onerror = () => ws.close();
+  }
+  connect();
+
+  function kick() {
+    if (running) return;
+    running = true;
+    step();
+  }
+
+  async function step() {
+    if (ttsQueue.length) {
+      await playTts(ttsQueue.shift());
+      step();
+      return;
+    }
+    if (chatQueue.length) {
+      const item = chatQueue[0];
+      await playChat(item);
+      item.remaining -= 1;
+      if (item.remaining <= 0) chatQueue.shift();
+      step();
+      return;
+    }
+    running = false;
+  }
+
+  function resetAnimations() {
+    tickerText.getAnimations().forEach((a) => a.cancel());
+  }
+
+  function playChat(item) {
+    return new Promise((resolve) => {
+      resetAnimations();
+      bar.classList.remove('tts-mode');
+
+      tickerText.innerHTML =
+        (item.author ? `<span class="author">${escapeHtml(item.author)} :</span>` : '') +
+        escapeHtml(item.text);
+
+      const barWidth = bar.getBoundingClientRect().width;
+      const textWidth = tickerText.getBoundingClientRect().width;
+      const distance = barWidth + textWidth;
+      const durationMs = Math.max(1500, (distance / SCROLL_SPEED_PX_PER_SEC) * 1000);
+
+      const anim = tickerText.animate(
+        [
+          { transform: `translateX(${barWidth}px)` },
+          { transform: `translateX(-${textWidth}px)` },
+        ],
+        { duration: durationMs, easing: 'linear', fill: 'forwards' }
+      );
+      anim.onfinish = resolve;
+      anim.oncancel = resolve;
+    });
+  }
+
+  function playTts(item) {
+    return new Promise((resolve) => {
+      resetAnimations();
+      bar.classList.add('tts-mode');
+      ttsText.textContent = item.text;
+
+      const duration = Math.min(TTS_MAX_MS, Math.max(TTS_MIN_MS, item.text.length * TTS_MS_PER_CHAR));
+      setTimeout(() => {
+        bar.classList.remove('tts-mode');
+        resolve();
+      }, duration);
+    });
+  }
+
+  function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+  }
+})();
+</script>
+</body>
+</html>
