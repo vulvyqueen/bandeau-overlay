@@ -5,6 +5,7 @@ const http = require('http');
 const path = require('path');
 const crypto = require('crypto');
 const { WebSocketServer, WebSocket } = require('ws');
+const { refreshEmotes, getEmotes } = require('./emotes');
 
 const app = express();
 app.use(express.json());
@@ -35,6 +36,12 @@ app.get(['/', '/overlay.html'], (req, res) => {
 // Petit log utile pour verifier que le relais tourne bien pendant un live
 app.get('/health', (req, res) => {
   res.json({ ok: true, clientsConnected: wss.clients.size, uptimeSec: Math.round(process.uptime()) });
+});
+
+// Liste des emotes (Twitch global via BTTV/7TV/FFZ + emotes de la chaine),
+// utilisee par l'overlay pour afficher des images au lieu du texte brut.
+app.get('/emotes', (req, res) => {
+  res.json(getEmotes());
 });
 
 // Point d'entree appele par Mix It Up (action "Web Request") pour chaque
@@ -73,3 +80,8 @@ const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
   console.log(`Bandeau server listening on port ${PORT}`);
 });
+
+// Chargement des emotes au demarrage, puis rafraichi toutes les 30 min
+// (nouvelles emotes d'abonnes, changements cote BTTV/7TV/FFZ, etc.)
+refreshEmotes();
+setInterval(refreshEmotes, 30 * 60 * 1000);
