@@ -64,6 +64,11 @@
     margin: 0 2px;
   }
 
+  #ticker-text .filler-tag {
+    color: #ffd76a;
+    margin-right: 8px;
+  }
+
   /* --- Mode TTS (style sous-titre) --- */
   #tts-caption {
     display: none;
@@ -124,6 +129,8 @@
   const ttsQueue = [];
   let running = false;
   let emoteMap = {};
+  let fillerItems = [];
+  let fillerIndex = 0;
 
   // Recupere la liste des emotes (Twitch/BTTV/7TV/FFZ) servie par le serveur.
   // Rafraichie a l'ouverture de l'overlay, puis toutes les 30 min (au cas ou
@@ -137,6 +144,21 @@
   }
   loadEmotes();
   setInterval(loadEmotes, 30 * 60 * 1000);
+
+  // Contenu de remplissage (fun facts + horoscope hebdo) affiche pendant les
+  // moments creux. Rafraichi toutes les heures (au cas ou on change de
+  // semaine pendant un tres long live, meme si ca reste rare).
+  function loadFiller() {
+    fetch('/filler')
+      .then((r) => (r.ok ? r.json() : { items: [] }))
+      .then((data) => {
+        fillerItems = (data && data.items) || [];
+        kick();
+      })
+      .catch(() => {});
+  }
+  loadFiller();
+  setInterval(loadFiller, 60 * 60 * 1000);
 
   function wsUrl() {
     const host = WS_HOST_OVERRIDE || location.host;
@@ -194,6 +216,17 @@
       if (item.remaining > 0) {
         chatQueue.push(item);
       }
+      step();
+      return;
+    }
+    if (fillerItems.length) {
+      // Moment creux : on comble avec un fun fact / horoscope. On revient a
+      // chaque tour verifier chatQueue/ttsQueue en premier, donc un vrai
+      // message reprend toujours la main des que l'item de remplissage en
+      // cours finit de defiler.
+      const text = fillerItems[fillerIndex % fillerItems.length];
+      fillerIndex += 1;
+      await playFiller(text);
       step();
       return;
     }
@@ -262,6 +295,30 @@
         return escapeHtml(token);
       })
       .join('');
+  }
+
+  function playFiller(text) {
+    return new Promise((resolve) => {
+      resetAnimations();
+      bar.classList.remove('tts-mode');
+
+      tickerText.innerHTML = `<span class="filler-tag">✨</span>${escapeHtml(text)}`;
+
+      const barWidth = bar.getBoundingClientRect().width;
+      const textWidth = tickerText.getBoundingClientRect().width;
+      const distance = barWidth + textWidth;
+      const durationMs = Math.max(1500, (distance / SCROLL_SPEED_PX_PER_SEC) * 1000);
+
+      const anim = tickerText.animate(
+        [
+          { transform: `translateX(${barWidth}px)` },
+          { transform: `translateX(-${textWidth}px)` },
+        ],
+        { duration: durationMs, easing: 'linear', fill: 'forwards' }
+      );
+      anim.onfinish = resolve;
+      anim.oncancel = resolve;
+    });
   }
 
   function playTts(item) {
