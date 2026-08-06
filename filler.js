@@ -137,6 +137,11 @@ const HOROSCOPE_VARIANTS = {
   ],
 };
 
+// Rappel incitant a utiliser les points de chaine pour une dedicace qui
+// passera dans le bandeau.
+const CHANNEL_POINTS_PROMO =
+  "Envie de passer a l'ecran ? Utilise tes points de chaine pour une dedicace qui s'affichera juste ici !";
+
 // Numero de semaine ISO (1-53), utilise pour faire "tourner" l'horoscope
 // chaque semaine sans dependre d'une source externe.
 function isoWeekNumber(date = new Date()) {
@@ -174,7 +179,21 @@ function getFillerItems() {
     items.push(horoscopes[h]);
     h += 1;
   }
-  return items;
+
+  // On glisse le rappel points de chaine / dedicace regulierement dans la
+  // rotation (environ 1 fois toutes les 6 entrees) plutot qu'une seule fois,
+  // pour qu'il ait une chance de repasser plusieurs fois par heure.
+  const withPromo = [];
+  items.forEach((item, i) => {
+    withPromo.push(item);
+    if ((i + 1) % 6 === 0) {
+      withPromo.push(CHANNEL_POINTS_PROMO);
+    }
+  });
+  if (!withPromo.includes(CHANNEL_POINTS_PROMO)) {
+    withPromo.push(CHANNEL_POINTS_PROMO);
+  }
+  return withPromo;
 }
 
 module.exports = { getFillerItems };
