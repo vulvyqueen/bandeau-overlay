@@ -3,6 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <title>Bandeau overlay</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Anton&display=swap" rel="stylesheet">
 <style>
   html, body {
     margin: 0;
@@ -20,7 +22,7 @@
     right: 0;
     bottom: 0;
     height: 56px;
-    background: linear-gradient(90deg, #1b0a3f, #6c1b8f, #c21e6b, #6c1b8f, #1b0a3f);
+    background: linear-gradient(90deg, rgba(27,10,63,0.32), rgba(108,27,143,0.32), rgba(194,30,107,0.32), rgba(108,27,143,0.32), rgba(27,10,63,0.32));
     border-top: 3px solid #ffd76a;
     display: flex;
     align-items: center;
@@ -31,7 +33,7 @@
 
   #ticker-bar.tts-mode {
     height: 96px;
-    background: linear-gradient(90deg, #1b0a3f, #7a1552, #1b0a3f);
+    background: linear-gradient(90deg, rgba(27,10,63,0.55), rgba(122,21,82,0.55), rgba(27,10,63,0.55));
     border-top-color: #ff5fa2;
   }
 
@@ -47,13 +49,11 @@
   #ticker-text {
     display: inline-block;
     color: #fff;
-    font-family: 'Arial Black', Arial, sans-serif;
+    font-family: 'Anton', Impact, 'Arial Black', Arial, sans-serif;
     font-size: 25px;
-    font-weight: 900;
-    font-style: italic;
-    letter-spacing: 0.3px;
-    -webkit-text-stroke: 1.5px #1b0a3f;
-    text-shadow: 0 0 8px rgba(255, 215, 106, 0.8), 2px 2px 0 #1b0a3f;
+    font-weight: 400;
+    letter-spacing: 0.5px;
+    text-shadow: 1px 1px 0 #1b0a3f, 2px 2px 0 #1b0a3f;
   }
 
   #ticker-text .author {
@@ -84,9 +84,11 @@
     padding: 0 32px;
     box-sizing: border-box;
     color: #fff;
+    font-family: 'Anton', Impact, Arial, sans-serif;
     font-size: 32px;
-    font-weight: 700;
-    text-shadow: 0 0 8px rgba(255, 215, 106, 0.6), 0 1px 4px rgba(0,0,0,0.7);
+    font-weight: 400;
+    letter-spacing: 0.5px;
+    text-shadow: 1px 1px 0 #1b0a3f, 2px 2px 0 #1b0a3f;
   }
 
   #tts-caption .tts-icon {
