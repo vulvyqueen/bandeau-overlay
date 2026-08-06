@@ -57,9 +57,28 @@ async function getTwitchAppToken() {
   }
 }
 
-// Choisit la meilleure image dispo pour une emote Twitch native (format
-// "images": { url_1x, url_2x, url_4x }).
-function bestTwitchNativeUrl(emote) {
+// Construit l'URL d'une emote Twitch native a partir du "template" renvoye
+// par Helix (ex: https://static-cdn.jtvnw.net/emoticons/v2/{{id}}/{{format}}/{{theme_mode}}/{{scale}}).
+// IMPORTANT : le champ "images" pratique renvoye par Helix pointe TOUJOURS
+// vers la version statique, meme quand l'emote est animee -- Twitch ne
+// documente pas ca clairement. Pour avoir l'animation il faut reconstruire
+// l'URL soi-meme avec format=animated quand l'emote le supporte (champ
+// "format": ["static","animated"]).
+function twitchNativeUrl(template, emote) {
+  if (!template) return bestTwitchNativeFallback(emote);
+  const format = emote.format?.includes('animated') ? 'animated' : 'static';
+  const theme = emote.theme_mode?.includes('dark') ? 'dark' : (emote.theme_mode?.[0] || 'light');
+  const scale = emote.scale?.includes('3.0') ? '3.0' : (emote.scale?.[emote.scale.length - 1] || '1.0');
+  return template
+    .replace('{{id}}', emote.id)
+    .replace('{{format}}', format)
+    .replace('{{theme_mode}}', theme)
+    .replace('{{scale}}', scale);
+}
+
+// Filet de securite si jamais Helix ne renvoie pas de template (ne devrait
+// pas arriver) : on retombe sur la version statique fournie directement.
+function bestTwitchNativeFallback(emote) {
   const images = emote?.images;
   if (!images) return null;
   return images.url_4x || images.url_2x || images.url_1x || null;
@@ -75,9 +94,9 @@ async function fetchTwitchNative(userId) {
   try {
     const globalRes = await fetch('https://api.twitch.tv/helix/chat/emotes/global', { headers });
     if (globalRes.ok) {
-      const { data } = await globalRes.json();
+      const { data, template } = await globalRes.json();
       for (const e of data || []) {
-        const url = bestTwitchNativeUrl(e);
+        const url = twitchNativeUrl(template, e);
         if (url) map[e.name] = url;
       }
     } else {
@@ -91,9 +110,9 @@ async function fetchTwitchNative(userId) {
     try {
       const chanRes = await fetch(`https://api.twitch.tv/helix/chat/emotes?broadcaster_id=${userId}`, { headers });
       if (chanRes.ok) {
-        const { data } = await chanRes.json();
+        const { data, template } = await chanRes.json();
         for (const e of data || []) {
-          const url = bestTwitchNativeUrl(e);
+          const url = twitchNativeUrl(template, e);
           if (url) map[e.name] = url;
         }
       } else {
@@ -142,10 +161,21 @@ async function fetchBTTV(userId) {
 function best7tvFile(emote) {
   const files = emote?.data?.host?.files;
   if (!files || !files.length) return null;
-  // On prend un format image classique (evite avif quand possible pour la
-  // compatibilite du navigateur source OBS).
-  const pngFiles = files.filter((f) => f.name.endsWith('.png') || f.name.endsWith('.webp'));
-  const file = pngFiles[pngFiles.length - 1] || files[files.length - 1];
+  // .png est TOUJOURS statique (meme pour une emote animee) -- il ne faut
+  // le prendre qu'en dernier recours. .webp et .gif conservent l'animation
+  // quand la source en a une, donc on les priorise. On evite .avif (moins
+  // bien supporte par le navigateur source d'OBS).
+  const byExt = (ext) => files.filter((f) => f.name.endsWith(ext));
+  const pick = byExt('.webp').length
+    ? byExt('.webp')
+    : byExt('.gif').length
+      ? byExt('.gif')
+      : byExt('.avif').length
+        ? byExt('.avif')
+        : byExt('.png').length
+          ? byExt('.png')
+          : files;
+  const file = pick[pick.length - 1];
   const base = emote.data.host.url.startsWith('http') ? emote.data.host.url : `https:${emote.data.host.url}`;
   return `${base}/${file.name}`;
 }
