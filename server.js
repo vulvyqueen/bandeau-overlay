@@ -6,6 +6,7 @@ const path = require('path');
 const crypto = require('crypto');
 const { WebSocketServer, WebSocket } = require('ws');
 const { refreshEmotes, getEmotes } = require('./emotes');
+const { getFillerItems } = require('./filler');
 
 const app = express();
 app.use(express.json());
@@ -42,6 +43,13 @@ app.get('/health', (req, res) => {
 // utilisee par l'overlay pour afficher des images au lieu du texte brut.
 app.get('/emotes', (req, res) => {
   res.json(getEmotes());
+});
+
+// Contenu de remplissage (fun facts + mini horoscope hebdo) affiche par
+// l'overlay pendant les moments creux, quand il n'y a ni message chat/points
+// de chaine ni TTS en attente.
+app.get('/filler', (req, res) => {
+  res.json({ items: getFillerItems() });
 });
 
 // Point d'entree appele par Mix It Up (action "Web Request") pour chaque
