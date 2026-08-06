@@ -1,12 +1,16 @@
-// Recupere et cache les emotes globales + de la chaine depuis BTTV, 7TV et
-// FFZ (sans avoir besoin de cles API : ce sont des endpoints publics). Les
-// emotes Twitch "officielles" (celles hebergees directement par Twitch, ex.
-// emotes d'abonnes) ne sont pas incluses ici car elles necessitent un compte
-// developpeur Twitch (Client ID + Secret) pour l'API Helix -- a ajouter plus
-// tard si besoin.
+// Recupere et cache les emotes globales + de la chaine depuis BTTV, 7TV,
+// FFZ et Twitch lui-meme (emotes globales + emotes d'abonnes de la chaine),
+// sans jamais toucher au token de Vulvy elle-meme : on utilise un "app
+// access token" obtenu via le Client ID / Client Secret de l'appli Twitch
+// dediee (TWITCH_CLIENT_ID / TWITCH_CLIENT_SECRET, cf. dev.twitch.tv).
 
 const TWITCH_CHANNEL_NAME = (process.env.TWITCH_CHANNEL_NAME || 'vulvyqueen').toLowerCase();
 let twitchUserId = process.env.TWITCH_CHANNEL_ID || null;
+
+const TWITCH_CLIENT_ID = process.env.TWITCH_CLIENT_ID || null;
+const TWITCH_CLIENT_SECRET = process.env.TWITCH_CLIENT_SECRET || null;
+let twitchAppToken = null;
+let twitchAppTokenExpiresAt = 0; // timestamp ms
 
 async function resolveTwitchUserId() {
   if (twitchUserId) return twitchUserId;
@@ -22,6 +26,85 @@ async function resolveTwitchUserId() {
     console.error('Impossible de resoudre l\'ID Twitch:', e.message);
   }
   return twitchUserId;
+}
+
+// Recupere (et cache) un "app access token" Twitch via le flux
+// client_credentials. Ce token n'est lie a aucun compte viewer/mod, il sert
+// juste a interroger l'API Helix (emotes globales + emotes de la chaine).
+async function getTwitchAppToken() {
+  if (!TWITCH_CLIENT_ID || !TWITCH_CLIENT_SECRET) return null;
+  if (twitchAppToken && Date.now() < twitchAppTokenExpiresAt - 5 * 60 * 1000) {
+    return twitchAppToken;
+  }
+  try {
+    const params = new URLSearchParams({
+      client_id: TWITCH_CLIENT_ID,
+      client_secret: TWITCH_CLIENT_SECRET,
+      grant_type: 'client_credentials',
+    });
+    const res = await fetch(`https://id.twitch.tv/oauth2/token?${params.toString()}`, { method: 'POST' });
+    if (!res.ok) {
+      console.error('Erreur obtention token Twitch:', res.status, await res.text());
+      return null;
+    }
+    const data = await res.json();
+    twitchAppToken = data.access_token;
+    twitchAppTokenExpiresAt = Date.now() + (data.expires_in || 0) * 1000;
+    return twitchAppToken;
+  } catch (e) {
+    console.error('Erreur obtention token Twitch:', e.message);
+    return null;
+  }
+}
+
+// Choisit la meilleure image dispo pour une emote Twitch native (format
+// "images": { url_1x, url_2x, url_4x }).
+function bestTwitchNativeUrl(emote) {
+  const images = emote?.images;
+  if (!images) return null;
+  return images.url_4x || images.url_2x || images.url_1x || null;
+}
+
+async function fetchTwitchNative(userId) {
+  const map = {};
+  const token = await getTwitchAppToken();
+  if (!token) return map;
+
+  const headers = { 'Client-Id': TWITCH_CLIENT_ID, Authorization: `Bearer ${token}` };
+
+  try {
+    const globalRes = await fetch('https://api.twitch.tv/helix/chat/emotes/global', { headers });
+    if (globalRes.ok) {
+      const { data } = await globalRes.json();
+      for (const e of data || []) {
+        const url = bestTwitchNativeUrl(e);
+        if (url) map[e.name] = url;
+      }
+    } else {
+      console.error('Erreur emotes Twitch globales:', globalRes.status, await globalRes.text());
+    }
+  } catch (e) {
+    console.error('Erreur emotes Twitch globales:', e.message);
+  }
+
+  if (userId) {
+    try {
+      const chanRes = await fetch(`https://api.twitch.tv/helix/chat/emotes?broadcaster_id=${userId}`, { headers });
+      if (chanRes.ok) {
+        const { data } = await chanRes.json();
+        for (const e of data || []) {
+          const url = bestTwitchNativeUrl(e);
+          if (url) map[e.name] = url;
+        }
+      } else {
+        console.error('Erreur emotes Twitch de la chaine:', chanRes.status, await chanRes.text());
+      }
+    } catch (e) {
+      console.error('Erreur emotes Twitch de la chaine:', e.message);
+    }
+  }
+
+  return map;
 }
 
 async function safeJson(url) {
@@ -127,14 +210,16 @@ let cachedEmotes = {};
 async function refreshEmotes() {
   try {
     const userId = await resolveTwitchUserId();
-    const [ffz, bttv, seventv] = await Promise.all([
+    const [ffz, bttv, seventv, twitchNative] = await Promise.all([
       fetchFFZ(TWITCH_CHANNEL_NAME),
       fetchBTTV(userId),
       fetch7TV(userId),
+      fetchTwitchNative(userId),
     ]);
-    // Priorite en cas de nom en double : 7TV > BTTV > FFZ (7TV est la plus
-    // utilisee par la communaute actuellement).
-    cachedEmotes = { ...ffz, ...bttv, ...seventv };
+    // Priorite en cas de nom en double : Twitch natif > 7TV > BTTV > FFZ
+    // (les emotes Twitch officielles -- notamment les emotes d'abonnes --
+    // sont la source la plus fiable pour un nom donne).
+    cachedEmotes = { ...ffz, ...bttv, ...seventv, ...twitchNative };
     console.log(`Emotes chargees : ${Object.keys(cachedEmotes).length}`);
   } catch (e) {
     console.error('Erreur lors du rafraichissement des emotes:', e.message);
