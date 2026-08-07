@@ -123,6 +123,7 @@
   const TTS_MIN_MS = 3000;
   const TTS_MAX_MS = 12000;
   const RECONNECT_DELAY_MS = 2000;
+  const FILLER_IDLE_MS = 15000;          // pause entre deux fun facts/horoscopes
   // =====================
 
   const bar = document.getElementById('ticker-bar');
@@ -233,10 +234,29 @@
       const text = fillerItems[fillerIndex % fillerItems.length];
       fillerIndex += 1;
       await playFiller(text);
+      // Pause entre deux fun facts : sans ca le bandeau anime en continu
+      // 24/7 (jamais de moment "au repos"), ce qui fait tourner le
+      // compositing du navigateur en permanence et peut faire ramer OBS/le
+      // jeu pendant un live. La pause est interrompue des qu'un vrai
+      // message (chat/TTS) arrive, donc ca ne retarde jamais le vrai
+      // contenu.
+      await waitUnlessQueued(FILLER_IDLE_MS);
       step();
       return;
     }
     running = false;
+  }
+
+  function waitUnlessQueued(ms) {
+    return new Promise((resolve) => {
+      const start = Date.now();
+      const iv = setInterval(() => {
+        if (chatQueue.length || ttsQueue.length || Date.now() - start >= ms) {
+          clearInterval(iv);
+          resolve();
+        }
+      }, 500);
+    });
   }
 
   function resetAnimations() {
