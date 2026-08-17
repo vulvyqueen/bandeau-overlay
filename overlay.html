@@ -73,6 +73,15 @@
     margin-right: 8px;
   }
 
+  #ticker-text .filler-tag.zevent {
+    color: #39ff14;
+  }
+
+  #ticker-text .zevent-text {
+    color: #39ff14;
+    text-shadow: 0 0 8px rgba(57, 255, 20, 0.85), 2px 2px 0 #063d0c;
+  }
+
   /* --- Mode TTS (style sous-titre) --- */
   #tts-caption {
     display: none;
@@ -123,7 +132,7 @@
   const TTS_MIN_MS = 3000;
   const TTS_MAX_MS = 12000;
   const RECONNECT_DELAY_MS = 2000;
-  const FILLER_IDLE_MS = 15000;          // pause entre deux fun facts/horoscopes
+  const FILLER_IDLE_MS = 0;              // pause entre deux fun facts/horoscopes (0 = desactivee)
   // =====================
 
   const bar = document.getElementById('ticker-bar');
@@ -231,16 +240,17 @@
       // chaque tour verifier chatQueue/ttsQueue en premier, donc un vrai
       // message reprend toujours la main des que l'item de remplissage en
       // cours finit de defiler.
-      const text = fillerItems[fillerIndex % fillerItems.length];
+      const item = fillerItems[fillerIndex % fillerItems.length];
       fillerIndex += 1;
-      await playFiller(text);
-      // Pause entre deux fun facts : sans ca le bandeau anime en continu
-      // 24/7 (jamais de moment "au repos"), ce qui fait tourner le
-      // compositing du navigateur en permanence et peut faire ramer OBS/le
-      // jeu pendant un live. La pause est interrompue des qu'un vrai
-      // message (chat/TTS) arrive, donc ca ne retarde jamais le vrai
-      // contenu.
-      await waitUnlessQueued(FILLER_IDLE_MS);
+      await playFiller(item);
+      // Pause optionnelle entre deux fun facts (desactivee par defaut,
+      // FILLER_IDLE_MS = 0). Utile si jamais le bandeau redevient trop
+      // gourmand un jour : on peut remettre une pause ici sans tout
+      // reecrire. La pause est interrompue des qu'un vrai message
+      // (chat/TTS) arrive, donc ca ne retarderait jamais le vrai contenu.
+      if (FILLER_IDLE_MS > 0) {
+        await waitUnlessQueued(FILLER_IDLE_MS);
+      }
       step();
       return;
     }
@@ -323,12 +333,21 @@
       .join('');
   }
 
-  function playFiller(text) {
+  function playFiller(item) {
     return new Promise((resolve) => {
       resetAnimations();
       bar.classList.remove('tts-mode');
 
-      tickerText.innerHTML = `<span class="filler-tag">✨</span>${escapeHtml(text)}`;
+      // La promo ZEvent (variant "zevent") s'affiche en vert avec un tag
+      // different, tout le reste (fun facts, horoscope, dedicace points de
+      // chaine) garde le style par defaut.
+      const isZevent = item && item.variant === 'zevent';
+      const tagClass = isZevent ? 'filler-tag zevent' : 'filler-tag';
+      const tagEmoji = isZevent ? '🟢' : '✨';
+      const textClass = isZevent ? 'zevent-text' : '';
+      const text = (item && item.text) || '';
+
+      tickerText.innerHTML = `<span class="${tagClass}">${tagEmoji}</span><span class="${textClass}">${escapeHtml(text)}</span>`;
 
       const barWidth = bar.getBoundingClientRect().width;
       const textWidth = tickerText.getBoundingClientRect().width;
@@ -370,3 +389,4 @@
 </script>
 </body>
 </html>
+
