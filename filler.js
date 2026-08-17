@@ -142,6 +142,20 @@ const HOROSCOPE_VARIANTS = {
 const CHANNEL_POINTS_PROMO =
   "Envie de passer a l'ecran ? Utilise tes points de chaine pour une dedicace qui s'affichera juste ici !";
 
+// Promo ZEvent (10e et derniere edition, 4-6 septembre 2026). Variant
+// "zevent" -> l'overlay l'affiche en vert aux couleurs de l'evenement au
+// lieu du style par defaut.
+const ZEVENT_PROMO = [
+  {
+    text: "Le ZEvent revient du 4 au 6 septembre 2026 pour sa 10e et derniere edition : viens participer et faire grimper la cagnotte !",
+    variant: 'zevent',
+  },
+  {
+    text: "Plus que quelques semaines avant le ZEvent (4-6 septembre 2026) : la toute derniere edition du marathon caritatif, on vous attend !",
+    variant: 'zevent',
+  },
+];
+
 // Numero de semaine ISO (1-53), utilise pour faire "tourner" l'horoscope
 // chaque semaine sans dependre d'une source externe.
 function isoWeekNumber(date = new Date()) {
@@ -163,37 +177,49 @@ function getWeeklyHoroscopes() {
 
 // Melange facts et horoscopes (un horoscope tous les 3 facts environ) pour
 // varier le contenu affiche dans le bandeau pendant les moments creux.
+// Chaque item est normalise en { text, variant } -- variant "default" pour
+// tout le contenu habituel, "zevent" pour la promo ZEvent (affichee en vert
+// cote overlay).
 function getFillerItems() {
   const horoscopes = getWeeklyHoroscopes();
-  const facts = FUN_FACTS.map((f) => `Le saviez-vous ? ${f}`);
+  const facts = FUN_FACTS.map((f) => ({ text: `Le saviez-vous ? ${f}`, variant: 'default' }));
   const items = [];
   let h = 0;
   facts.forEach((fact, i) => {
     items.push(fact);
     if ((i + 1) % 3 === 0 && h < horoscopes.length) {
-      items.push(horoscopes[h]);
+      items.push({ text: horoscopes[h], variant: 'default' });
       h += 1;
     }
   });
   while (h < horoscopes.length) {
-    items.push(horoscopes[h]);
+    items.push({ text: horoscopes[h], variant: 'default' });
     h += 1;
   }
 
-  // On glisse le rappel points de chaine / dedicace regulierement dans la
-  // rotation (environ 1 fois toutes les 6 entrees) plutot qu'une seule fois,
-  // pour qu'il ait une chance de repasser plusieurs fois par heure.
+  // On glisse le rappel points de chaine / dedicace et la promo ZEvent
+  // regulierement dans la rotation plutot qu'une seule fois, pour qu'ils
+  // aient une chance de repasser plusieurs fois par heure.
   const withPromo = [];
+  let z = 0;
   items.forEach((item, i) => {
     withPromo.push(item);
     if ((i + 1) % 6 === 0) {
-      withPromo.push(CHANNEL_POINTS_PROMO);
+      withPromo.push({ text: CHANNEL_POINTS_PROMO, variant: 'default' });
+    }
+    if ((i + 1) % 5 === 0) {
+      withPromo.push(ZEVENT_PROMO[z % ZEVENT_PROMO.length]);
+      z += 1;
     }
   });
-  if (!withPromo.includes(CHANNEL_POINTS_PROMO)) {
-    withPromo.push(CHANNEL_POINTS_PROMO);
+  if (!withPromo.some((it) => it.text === CHANNEL_POINTS_PROMO)) {
+    withPromo.push({ text: CHANNEL_POINTS_PROMO, variant: 'default' });
+  }
+  if (z === 0) {
+    withPromo.push(ZEVENT_PROMO[0]);
   }
   return withPromo;
 }
 
 module.exports = { getFillerItems };
+
