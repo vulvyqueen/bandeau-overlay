@@ -42,6 +42,7 @@ app.get('/health', (req, res) => {
 // Liste des emotes (Twitch global via BTTV/7TV/FFZ + emotes de la chaine),
 // utilisee par l'overlay pour afficher des images au lieu du texte brut.
 app.get('/emotes', (req, res) => {
+  res.set('Cache-Control', 'no-store');
   res.json(getEmotes());
 });
 
@@ -49,6 +50,7 @@ app.get('/emotes', (req, res) => {
 // l'overlay pendant les moments creux, quand il n'y a ni message chat/points
 // de chaine ni TTS en attente.
 app.get('/filler', (req, res) => {
+  res.set('Cache-Control', 'no-store');
   res.json({ items: getFillerItems() });
 });
 
